@@ -6,6 +6,7 @@ import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 import org.openftc.easyopencv.OpenCvPipeline;
@@ -28,6 +29,18 @@ public class SampleDetection extends OpenCvPipeline {
             return hsv;
         }
     }
+
+    class Line {
+        Point start, end;
+        double length;
+        Line(Point start, Point end) {
+            this.start = start;
+            this.end = end;
+            length = Math.sqrt(Math.pow(start.x - end.x, 2) + Math.pow(start.y - end.y, 2));
+        }
+
+    }
+
     PictureNormalization pictureNormalization = new PictureNormalization();
     int SampleColor;
     Scalar lowHSV0, lowHSV1, lowHSV2, highHSV0, highHSV1, highHSV2;
@@ -69,15 +82,48 @@ public class SampleDetection extends OpenCvPipeline {
         for (MatOfPoint contour : contours) {
             MatOfPoint2f contour2f = new MatOfPoint2f(contour.toArray());
             MatOfPoint2f polygon2f = new MatOfPoint2f();
-            Imgproc.approxPolyDP(contour2f, polygon2f, 5, true); // Adjust epsilon value as needed
+            Imgproc.approxPolyDP(contour2f, polygon2f, 5, true);
             MatOfPoint polygon = new MatOfPoint(polygon2f.toArray());
             polygons.add(polygon);
         }
+        Imgproc.drawContours(input, polygons.subList(1, polygons.size() - 1), -1, new Scalar(0, 255, 0), 1);
+        List<Line> lines = new ArrayList<>();
+        double averageLength = 0;
+        for (MatOfPoint contour : contours) {
 
-        for (MatOfPoint polygon : polygons) {
-            Imgproc.polylines(input, polygons, true, new Scalar(0, 255, 0), 2);
+            MatOfPoint2f contour2f = new MatOfPoint2f(contour.toArray());
+            double epsilon = 0.02 * Imgproc.arcLength(contour2f, true);
+            MatOfPoint2f approxCurve = new MatOfPoint2f();
+            Imgproc.approxPolyDP(contour2f, approxCurve, epsilon, true);
+
+            Point[] points = approxCurve.toArray();
+            for (int i = 0; i < points.length; i++) {
+                Point start = points[i];
+                Point end = points[(i + 1) % points.length];
+                lines.add(new Line(start, end));
+                averageLength += lines.get(lines.size() - 1).length;
+                Imgproc.line(input, start, end, new Scalar(255, 0, 0), 2);
+            }
         }
-
+        averageLength /= lines.size();
+        List<Line> longLines = new ArrayList<>();
+        for (Line line : lines) {
+            if (line.length > averageLength) {
+                longLines.add(line);
+            }
+        }
+        List<Line> reallyLongLines = new ArrayList<>();
+        double longAverage = 0;
+        for (Line line : longLines) {
+            longAverage += line.length;
+        }
+        longAverage /= longLines.size();
+        for (Line line : longLines) {
+            if (line.length > longAverage) {
+                reallyLongLines.add(line);
+                Imgproc.line(input, line.start, line.end, new Scalar(0, 0, 255), 2);
+            }
+        }
         return input;
     }
 
