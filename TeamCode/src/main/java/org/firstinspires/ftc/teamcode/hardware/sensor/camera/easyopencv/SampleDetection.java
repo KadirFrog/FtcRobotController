@@ -1,20 +1,33 @@
-package org.firstinspires.ftc.teamcode.hardware.sensor.camera;
+package org.firstinspires.ftc.teamcode.hardware.sensor.camera.easyopencv;
 
 import android.graphics.Canvas;
 
-import org.firstinspires.ftc.robotcore.internal.camera.calibration.CameraCalibration;
-import org.firstinspires.ftc.vision.VisionProcessor;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
+import org.openftc.easyopencv.OpenCvPipeline;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class SampleDetection implements VisionProcessor {
+public class SampleDetection extends OpenCvPipeline {
+    public class PictureNormalization {
+        public Mat normalizeValue(Mat hsv) {
+            List<Mat> channels = new ArrayList<>();
+            Core.split(hsv, channels);
+            Mat valueChannel = channels.get(2);
+
+            double averageValue = Core.mean(valueChannel).val[0];
+            valueChannel.convertTo(valueChannel, -1, 128 / averageValue, 0);
+            valueChannel.copyTo(channels.get(2));
+
+            Core.merge(channels, hsv);
+            return hsv;
+        }
+    }
     PictureNormalization pictureNormalization = new PictureNormalization();
     int SampleColor;
     Scalar lowHSV0, lowHSV1, lowHSV2, highHSV0, highHSV1, highHSV2;
@@ -28,10 +41,7 @@ public class SampleDetection implements VisionProcessor {
         highHSV2 = new Scalar(65, highHSV0.val[1], highHSV0.val[2]);
     }
 
-    @Override
-    public void init(int width, int height, CameraCalibration calibration) {
 
-    }
 
     public void setColor(int colorCode) { // 0 -> red, 1 -> blue, 2 -> yellow
         if (colorCode < 3 && colorCode > -1) {
@@ -40,9 +50,9 @@ public class SampleDetection implements VisionProcessor {
     }
 
     @Override
-    public Object processFrame(Mat frame, long captureTimeNanos) {
+    public Mat processFrame(Mat input) {
         Mat hsv = new Mat();
-        Imgproc.cvtColor(frame, hsv, Imgproc.COLOR_RGB2HSV);
+        Imgproc.cvtColor(input, hsv, Imgproc.COLOR_RGB2HSV);
         hsv = pictureNormalization.normalizeValue(hsv);
 
         Mat finalThresh = new Mat();
@@ -55,15 +65,20 @@ public class SampleDetection implements VisionProcessor {
         }
         List<MatOfPoint> contours = new ArrayList<>();
         Imgproc.findContours(finalThresh, contours, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-
-        List<MatOfPoint> longContours = new ArrayList<>();
-        for (MatOfPoint contour1 : contours) {
-            MatOfPoint2f contour = new MatOfPoint2f(contour1.toArray());
-            if (Imgproc.arcLength(contour, true) > 100) {
-                longContours.add(contour1);
-            }
+        List<MatOfPoint> polygons = new ArrayList<>();
+        for (MatOfPoint contour : contours) {
+            MatOfPoint2f contour2f = new MatOfPoint2f(contour.toArray());
+            MatOfPoint2f polygon2f = new MatOfPoint2f();
+            Imgproc.approxPolyDP(contour2f, polygon2f, 5, true); // Adjust epsilon value as needed
+            MatOfPoint polygon = new MatOfPoint(polygon2f.toArray());
+            polygons.add(polygon);
         }
-        return null;
+
+        for (MatOfPoint polygon : polygons) {
+            Imgproc.polylines(input, polygons, true, new Scalar(0, 255, 0), 2);
+        }
+
+        return input;
     }
 
     @Override
